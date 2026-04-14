@@ -1,0 +1,226 @@
+schema-version = "1.11.0"
+
+[install]
+# `sbx` and `sbx-helpers` are installed as locally-built Nix-store
+# references. Both store paths are GC-rooted by the `./result-sbx` and
+# `./result-sbx-helpers` symlinks in ~/dev/builds/build-sbx. If those
+# symlinks are removed, these paths become eligible for `nix-collect-
+# garbage` and this environment will fail to activate. To re-pin:
+# rebuild in the build repo and replace the store paths below.
+#
+# `sbx` is the syumai/sbx CLI — kept available as a user-facing escape
+# hatch for direct sandbox-exec policy construction. The helpers below
+# no longer wrap it; they call /usr/bin/sandbox-exec directly with
+# hand-written SBPL policies (because sbx has no way to allow the
+# process-fork operation except via --allow-all).
+sbx.store-path = "/nix/store/5dwg6sb6ysvm3h5aaaxa6mp88kl8rhi0-sbx-unstable-2026-04-13"
+sbx.systems = ["aarch64-darwin", "x86_64-darwin"]
+
+sbx-helpers.store-path = "/nix/store/dq804l5ivn8inkm7vi6kql0rbrqzvwqs-sbx-helpers"
+sbx-helpers.systems = ["aarch64-darwin", "x86_64-darwin"]
+
+# sbx-proxy: CONNECT-style hostname allowlisting proxy. Started on
+# demand by sbx-agent when --net-allow-host / SBX_NET_ALLOW_HOSTS is
+# set. Must be on PATH so sbx-agent can find it by name.
+sbx-proxy.store-path = "/nix/store/29bn0v567b0jh9647rniwkyycbvqs1jy-sbx-proxy-0.1.0"
+sbx-proxy.systems = ["aarch64-darwin", "x86_64-darwin"]
+
+[profile]
+# Iteration surface for per-agent sandbox wrappers. Each function below
+# calls `sbx-agent` with agent-specific state-dir allowances. Profile
+# functions are edit-and-reactivate (no rebuild needed), so fixing a
+# wrong state dir is fast.
+#
+# IMPORTANT: profile functions are only available in interactive
+# `flox activate` subshells. They are NOT reachable via
+# `flox activate -- cmd` invocations (including from MCP tools),
+# because profile scripts are sourced by your shell at subshell
+# startup, which that form skips. For non-interactive use, graduate
+# the function to a packaged helper in sbx-helpers.nix.
+#
+# Agent wrappers all call `_sbx_agent_args`, a helper function that
+# emits common sbx-agent flags driven by SBX_* environment variables.
+# Each wrapper then adds its tool-specific --write paths and binary.
+# Adding a new SBX_* env var means editing `_sbx_agent_args` once —
+# all 11 wrappers pick it up automatically.
+#
+# Supported SBX_* environment variables:
+#
+#     SBX_NET          Network mode. Default: allow.
+#                      Values: block | allow | host:port[,host:port]...
+#                      Host form only accepts '*' or 'localhost'.
+#                      Examples:
+#                          SBX_NET=block            no network
+#                          SBX_NET='*:443'          HTTPS only, any host
+#                          SBX_NET='localhost:*'    loopback only
+#                      Numeric IPs, DNS names, and CIDRs are REJECTED
+#                      by sandbox-exec's SBPL parser.
+#
+#     SBX_STRICT       If set (any non-empty value), adds --strict-reads.
+#                      Switches to a deny-default read policy borrowed
+#                      from phylum-dev/birdcage. Reads are scoped to
+#                      macOS system dylibs, /nix/store, $FLOX_ENV, $PWD,
+#                      $TMPDIR, each --write, and each --read. Closes
+#                      the "agent greps ~/.ssh and exfils to *:443"
+#                      gap. WILL break tools that expect to read $HOME
+#                      config files (git wants ~/.gitconfig, etc.) —
+#                      iterate in this file by adding --read lines.
+#
+#     SBX_PASSENV      Space-separated list of env var names to pass
+#                      into the sandbox. By default, only a safe
+#                      whitelist (PATH, HOME, USER, SHELL, TERM,
+#                      TMPDIR, LANG, LC_*, FLOX_ENV, ...) is passed.
+#                      API keys, tokens, SSH_AUTH_SOCK, and AWS_*
+#                      vars are DROPPED unless listed here.
+#                      Example: SBX_PASSENV="ANTHROPIC_API_KEY"
+#
+#     SBX_TIMEOUT      Wall-clock timeout. GNU duration string:
+#                      30s / 5m / 2h. On expiry: SIGTERM then SIGKILL
+#                      5s later.
+#
+#     SBX_MAX_CPU      RLIMIT_CPU in seconds (ulimit -t).
+#     SBX_MAX_PROCS    RLIMIT_NPROC (ulimit -u).
+#     SBX_MAX_FILES    RLIMIT_NOFILE (ulimit -n).
+#     (No SBX_MAX_MEM — macOS kernel does not implement settable
+#     RLIMIT_AS / RLIMIT_DATA / RLIMIT_RSS.)
+#
+#     SBX_NET_ALLOW_HOSTS
+#                      Space-separated list of hostnames. Starts
+#                      sbx-proxy (CONNECT-style HTTPS allowlist)
+#                      automatically and routes the sandboxed child's
+#                      HTTPS traffic through it. Closes the gap that
+#                      sandbox-exec's SBPL can't filter by hostname.
+#                      Supports wildcards (*.example.com). Mutually
+#                      exclusive with SBX_NET.
+#                      Example: SBX_NET_ALLOW_HOSTS='api.anthropic.com'
+#                      End-to-end TLS is preserved; the proxy never
+#                      terminates the connection. See the audit log at
+#                      $FLOX_ENV_CACHE/sbx-proxy.log for per-connection
+#                      allow/deny events.
+#
+# Each wrapper assumes the underlying agent binary (`claude`, `codex`,
+# etc.) is installed and on $PATH. This env does not install them.
+#
+# State-dir confidence:
+#   Confident: claude-jail, copilot-jail
+#   Best-guess (# TODO: verify): all others
+# When a wrapper fails on first use because it can't write somewhere,
+# edit the corresponding function below, `exit` the shell, and
+# `flox activate` again to pick up the change.
+common = '''
+  # ----- shared: populate global _sbx_args array from SBX_* env vars -----
+  # Each wrapper calls _sbx_agent_args (which clears and populates
+  # _sbx_args) and then expands "${_sbx_args[@]}" quoted. We use an
+  # array (not unquoted stdout + word-splitting) because a value like
+  # SBX_NET='*:443' would otherwise glob-expand if the caller's cwd
+  # contained a matching file (e.g. /tmp/collision:443). Array
+  # expansion sidesteps globbing and word-splitting entirely.
+  _sbx_agent_args() {
+    _sbx_args=()
+    [[ -n "${SBX_STRICT:-}"    ]] && _sbx_args+=(--strict-reads)
+    [[ -n "${SBX_TIMEOUT:-}"   ]] && _sbx_args+=(--timeout "$SBX_TIMEOUT")
+    [[ -n "${SBX_MAX_CPU:-}"   ]] && _sbx_args+=(--max-cpu "$SBX_MAX_CPU")
+    [[ -n "${SBX_MAX_PROCS:-}" ]] && _sbx_args+=(--max-procs "$SBX_MAX_PROCS")
+    [[ -n "${SBX_MAX_FILES:-}" ]] && _sbx_args+=(--max-files "$SBX_MAX_FILES")
+    local v
+    # SBX_PASSENV is space-separated. Env var NAMES contain no
+    # whitespace or shell metacharacters, so unquoted word-splitting
+    # here is safe.
+    for v in ${SBX_PASSENV:-}; do
+      _sbx_args+=(--passenv "$v")
+    done
+    # SBX_NET_ALLOW_HOSTS takes precedence over SBX_NET. If set, we
+    # use proxy mode (sbx-agent auto-starts sbx-proxy) and do NOT
+    # pass --net — sbx-agent will internally configure the sandbox
+    # to only allow localhost:<proxy-port>.
+    if [[ -n "${SBX_NET_ALLOW_HOSTS:-}" ]]; then
+      local h
+      for h in ${SBX_NET_ALLOW_HOSTS}; do
+        _sbx_args+=(--net-allow-host "$h")
+      done
+    else
+      _sbx_args+=(--net "${SBX_NET:-allow}")
+    fi
+  }
+
+  # ----- sbx-here (legacy iteration-surface preset) -----
+  # Strict project-dir-only jail: writes restricted to $PWD (no
+  # $TMPDIR), network blocked. Ignores SBX_* env vars by design.
+  sbx-here() {
+    sbx-agent --no-tmpdir --net block -- "$@"
+  }
+
+  # ----- Per-agent jails -----
+  # Each wrapper populates _sbx_args via the helper, then expands it
+  # QUOTED into sbx-agent's argv. Quoting is what prevents glob and
+  # word-splitting bugs.
+
+  # Anthropic Claude Code
+  claude-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.claude" -- claude "$@"
+  }
+
+  # OpenAI Codex CLI — TODO: verify state dir
+  codex-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.codex" --write "$HOME/.config/codex" -- codex "$@"
+  }
+
+  # Google Gemini CLI — TODO: verify state dir
+  gemini-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.gemini" --write "$HOME/.config/gemini" -- gemini "$@"
+  }
+
+  # GitHub Copilot CLI (gh extension) — usage: copilot-jail suggest "..."
+  copilot-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.config/gh" -- gh copilot "$@"
+  }
+
+  # Charm.sh Crush — TODO: verify state dir
+  crush-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.config/crush" --write "$HOME/.local/share/crush" --write "$HOME/.cache/crush" -- crush "$@"
+  }
+
+  # OpenCode — TODO: verify state dir
+  opencode-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.opencode" --write "$HOME/.config/opencode" -- opencode "$@"
+  }
+
+  # OpenClaw — TODO: verify state dir
+  openclaw-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.openclaw" --write "$HOME/.config/openclaw" -- openclaw "$@"
+  }
+
+  # NullClaw — TODO: verify state dir
+  nullclaw-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.nullclaw" --write "$HOME/.config/nullclaw" -- nullclaw "$@"
+  }
+
+  # ZeroClaw — TODO: verify state dir
+  zeroclaw-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.zeroclaw" --write "$HOME/.config/zeroclaw" -- zeroclaw "$@"
+  }
+
+  # Nanobot — TODO: verify state dir
+  nanobot-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.nanobot" --write "$HOME/.config/nanobot" -- nanobot "$@"
+  }
+
+  # Nanocoder — TODO: verify state dir
+  nanocoder-jail() {
+    _sbx_agent_args
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.nanocoder" --write "$HOME/.config/nanocoder" -- nanocoder "$@"
+  }
+'''
+
+[options]
+systems = ["aarch64-darwin", "x86_64-darwin"]
