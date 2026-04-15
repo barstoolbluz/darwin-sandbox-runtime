@@ -769,7 +769,13 @@ popd >/dev/null
 section "profile wrappers: claude-jail / copilot-jail / codex-jail"
 
 fake_bin=$(mktemp -d -t sbx-jail-fakebin.XXXXXX)
-trap 'rm -rf "$scratch" "$fake_bin" 2>/dev/null' EXIT
+# Each new trap must re-enumerate every tmpdir from prior sections;
+# bash has no additive trap syntax and `trap -p EXIT | sed` is fragile.
+# Missing any dir here strands test artifacts on failed runs. $audit_dir
+# was dropped here in the past — every section that adds a new dir now
+# lives in this list, and the final trap at line ~940 adds $fake_bin
+# back in after the canary section's tmpdir is spliced in.
+trap 'rm -rf "$scratch" "$audit_dir" "$fake_bin" 2>/dev/null' EXIT
 
 make_fake() {
   local name="$1"
