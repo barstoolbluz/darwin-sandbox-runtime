@@ -22,7 +22,7 @@ sbx-helpers.systems = ["aarch64-darwin", "x86_64-darwin"]
 # sbx-proxy: CONNECT-style hostname allowlisting proxy. Started on
 # demand by sbx-agent when --net-allow-host / SBX_NET_ALLOW_HOSTS is
 # set. Must be on PATH so sbx-agent can find it by name.
-sbx-proxy.store-path = "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0"
+sbx-proxy.store-path = "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0"
 sbx-proxy.systems = ["aarch64-darwin", "x86_64-darwin"]
 
 [profile]

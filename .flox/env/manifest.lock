@@ -18,7 +18,7 @@
         ]
       },
       "sbx-proxy": {
-        "store-path": "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0",
+        "store-path": "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0",
         "systems": [
           "aarch64-darwin",
           "x86_64-darwin"
@@ -62,13 +62,13 @@
     },
     {
       "install_id": "sbx-proxy",
-      "store_path": "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0",
+      "store_path": "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0",
       "system": "aarch64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-proxy",
-      "store_path": "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0",
+      "store_path": "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0",
       "system": "x86_64-darwin",
       "priority": 5
     }
