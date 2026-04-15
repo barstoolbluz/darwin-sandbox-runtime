@@ -11,14 +11,14 @@
         ]
       },
       "sbx-helpers": {
-        "store-path": "/nix/store/dq804l5ivn8inkm7vi6kql0rbrqzvwqs-sbx-helpers",
+        "store-path": "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers",
         "systems": [
           "aarch64-darwin",
           "x86_64-darwin"
         ]
       },
       "sbx-proxy": {
-        "store-path": "/nix/store/29bn0v567b0jh9647rniwkyycbvqs1jy-sbx-proxy-0.1.0",
+        "store-path": "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0",
         "systems": [
           "aarch64-darwin",
           "x86_64-darwin"
@@ -50,25 +50,25 @@
     },
     {
       "install_id": "sbx-helpers",
-      "store_path": "/nix/store/dq804l5ivn8inkm7vi6kql0rbrqzvwqs-sbx-helpers",
+      "store_path": "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers",
       "system": "aarch64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-helpers",
-      "store_path": "/nix/store/dq804l5ivn8inkm7vi6kql0rbrqzvwqs-sbx-helpers",
+      "store_path": "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers",
       "system": "x86_64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-proxy",
-      "store_path": "/nix/store/29bn0v567b0jh9647rniwkyycbvqs1jy-sbx-proxy-0.1.0",
+      "store_path": "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0",
       "system": "aarch64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-proxy",
-      "store_path": "/nix/store/29bn0v567b0jh9647rniwkyycbvqs1jy-sbx-proxy-0.1.0",
+      "store_path": "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0",
       "system": "x86_64-darwin",
       "priority": 5
     }

@@ -16,13 +16,13 @@ schema-version = "1.11.0"
 sbx.store-path = "/nix/store/5dwg6sb6ysvm3h5aaaxa6mp88kl8rhi0-sbx-unstable-2026-04-13"
 sbx.systems = ["aarch64-darwin", "x86_64-darwin"]
 
-sbx-helpers.store-path = "/nix/store/dq804l5ivn8inkm7vi6kql0rbrqzvwqs-sbx-helpers"
+sbx-helpers.store-path = "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers"
 sbx-helpers.systems = ["aarch64-darwin", "x86_64-darwin"]
 
 # sbx-proxy: CONNECT-style hostname allowlisting proxy. Started on
 # demand by sbx-agent when --net-allow-host / SBX_NET_ALLOW_HOSTS is
 # set. Must be on PATH so sbx-agent can find it by name.
-sbx-proxy.store-path = "/nix/store/29bn0v567b0jh9647rniwkyycbvqs1jy-sbx-proxy-0.1.0"
+sbx-proxy.store-path = "/nix/store/zy90wh8a9alhjl3m1vkw88sa6a4ki30w-sbx-proxy-0.1.0"
 sbx-proxy.systems = ["aarch64-darwin", "x86_64-darwin"]
 
 [profile]
