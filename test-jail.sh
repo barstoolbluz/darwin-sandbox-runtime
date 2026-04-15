@@ -934,26 +934,29 @@ fi
 rm -f /tmp/lms-err
 
 # (l) regex-level reject: 20-digit pure decimal, would overflow
-# 10#$num normalization
+# 10#$num normalization. The parse_bytes "too long" branch kicks
+# in because the input is all digits (valid shape) but exceeds
+# the 18-digit cap.
 if sbx-agent --log-max-size 99999999999999999999 --dump-policy >/dev/null 2>/tmp/lms-err; then
   _record_fail "parse_bytes 20-digit unexpectedly accepted" "$(cat /tmp/lms-err)"
 else
   rc=$?
-  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"max 18 digits"* ]]; then
-    _record_pass "parse_bytes 20-digit rejected at regex"
+  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"too long"* ]]; then
+    _record_pass "parse_bytes 20-digit rejected as too long"
   else
     _record_fail "parse_bytes 20-digit wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
   fi
 fi
 rm -f /tmp/lms-err
 
-# (m) regex-level reject: 19-digit pure decimal (just over limit)
+# (m) regex-level reject: 19-digit pure decimal (just over limit).
+# Same "too long" branch — valid digit shape, one too many digits.
 if sbx-agent --log-max-size 9999999999999999999 --dump-policy >/dev/null 2>/tmp/lms-err; then
   _record_fail "parse_bytes 19-digit unexpectedly accepted" "$(cat /tmp/lms-err)"
 else
   rc=$?
-  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"max 18 digits"* ]]; then
-    _record_pass "parse_bytes 19-digit rejected at regex"
+  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"too long"* ]]; then
+    _record_pass "parse_bytes 19-digit rejected as too long"
   else
     _record_fail "parse_bytes 19-digit wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
   fi
@@ -984,6 +987,23 @@ else
     _record_pass "parse_bytes 8589934592G one-over-boundary rejected"
   else
     _record_fail "parse_bytes 8589934592G wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
+  fi
+fi
+rm -f /tmp/lms-err
+
+# (p) short-but-malformed input must get "invalid size value" (NOT
+# "too long"). Regression guard for the error-message polish that
+# differentiated the two regex-reject branches — without the split,
+# 0x10 was rejected with a confusing "max 18 digits" message.
+if sbx-agent --log-max-size 0x10 --dump-policy >/dev/null 2>/tmp/lms-err; then
+  _record_fail "parse_bytes 0x10 unexpectedly accepted" "$(cat /tmp/lms-err)"
+else
+  rc=$?
+  msg=$(cat /tmp/lms-err)
+  if [[ "$rc" -eq 2 && "$msg" == *"invalid size value"* && "$msg" != *"too long"* ]]; then
+    _record_pass "parse_bytes short-malformed 0x10 gets targeted error"
+  else
+    _record_fail "parse_bytes 0x10 wrong error" "rc=$rc msg=$msg"
   fi
 fi
 rm -f /tmp/lms-err
