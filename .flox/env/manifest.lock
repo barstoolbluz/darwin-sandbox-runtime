@@ -3,6 +3,32 @@
   "manifest": {
     "schema-version": "1.11.0",
     "install": {
+      "claude-code": {
+        "pkg-path": "claude-code"
+      },
+      "codex": {
+        "pkg-path": "codex"
+      },
+      "crush": {
+        "pkg-path": "crush"
+      },
+      "gemini-cli": {
+        "pkg-path": "gemini-cli"
+      },
+      "gh": {
+        "pkg-path": "gh"
+      },
+      "nanocoder": {
+        "pkg-path": "flox/nanocoder",
+        "pkg-group": "nanocoder"
+      },
+      "nullclaw": {
+        "pkg-path": "flox/nullclaw",
+        "pkg-group": "nullclaw"
+      },
+      "opencode": {
+        "pkg-path": "opencode"
+      },
       "sbx": {
         "store-path": "/nix/store/5dwg6sb6ysvm3h5aaaxa6mp88kl8rhi0-sbx-unstable-2026-04-13",
         "systems": [
@@ -23,10 +49,13 @@
           "aarch64-darwin",
           "x86_64-darwin"
         ]
+      },
+      "zeroclaw": {
+        "pkg-path": "zeroclaw"
       }
     },
     "profile": {
-      "common": "  # ----- shared: populate global _sbx_args array from SBX_* env vars -----\n  # Each wrapper calls _sbx_agent_args (which clears and populates\n  # _sbx_args) and then expands \"${_sbx_args[@]}\" quoted. We use an\n  # array (not unquoted stdout + word-splitting) because a value like\n  # SBX_NET='*:443' would otherwise glob-expand if the caller's cwd\n  # contained a matching file (e.g. /tmp/collision:443). Array\n  # expansion sidesteps globbing and word-splitting entirely.\n  _sbx_agent_args() {\n    _sbx_args=()\n    [[ -n \"${SBX_STRICT:-}\"    ]] && _sbx_args+=(--strict-reads)\n    [[ -n \"${SBX_TIMEOUT:-}\"   ]] && _sbx_args+=(--timeout \"$SBX_TIMEOUT\")\n    [[ -n \"${SBX_MAX_CPU:-}\"   ]] && _sbx_args+=(--max-cpu \"$SBX_MAX_CPU\")\n    [[ -n \"${SBX_MAX_PROCS:-}\" ]] && _sbx_args+=(--max-procs \"$SBX_MAX_PROCS\")\n    [[ -n \"${SBX_MAX_FILES:-}\" ]] && _sbx_args+=(--max-files \"$SBX_MAX_FILES\")\n    [[ -n \"${SBX_LOG_MAX_SIZE:-}\" ]] && _sbx_args+=(--log-max-size \"$SBX_LOG_MAX_SIZE\")\n    local v\n    # SBX_PASSENV is space-separated. Env var NAMES contain no\n    # whitespace or shell metacharacters, so unquoted word-splitting\n    # here is safe.\n    for v in ${SBX_PASSENV:-}; do\n      _sbx_args+=(--passenv \"$v\")\n    done\n    # SBX_NET_ALLOW_HOSTS takes precedence over SBX_NET. If set, we\n    # use proxy mode (sbx-agent auto-starts sbx-proxy) and do NOT\n    # pass --net — sbx-agent will internally configure the sandbox\n    # to only allow localhost:<proxy-port>.\n    if [[ -n \"${SBX_NET_ALLOW_HOSTS:-}\" ]]; then\n      local h\n      for h in ${SBX_NET_ALLOW_HOSTS}; do\n        _sbx_args+=(--net-allow-host \"$h\")\n      done\n    else\n      _sbx_args+=(--net \"${SBX_NET:-allow}\")\n    fi\n  }\n\n  # ----- sbx-here (legacy iteration-surface preset) -----\n  # Strict project-dir-only jail: writes restricted to $PWD (no\n  # $TMPDIR), network blocked. Ignores SBX_* env vars by design.\n  sbx-here() {\n    sbx-agent --no-tmpdir --net block -- \"$@\"\n  }\n\n  # ----- Per-agent jails -----\n  # Each wrapper populates _sbx_args via the helper, then expands it\n  # QUOTED into sbx-agent's argv. Quoting is what prevents glob and\n  # word-splitting bugs.\n\n  # Anthropic Claude Code\n  claude-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.claude\" -- claude \"$@\"\n  }\n\n  # OpenAI Codex CLI — TODO: verify state dir\n  codex-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.codex\" --write \"$HOME/.config/codex\" -- codex \"$@\"\n  }\n\n  # Google Gemini CLI — TODO: verify state dir\n  gemini-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.gemini\" --write \"$HOME/.config/gemini\" -- gemini \"$@\"\n  }\n\n  # GitHub Copilot CLI (gh extension) — usage: copilot-jail suggest \"...\"\n  copilot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/gh\" -- gh copilot \"$@\"\n  }\n\n  # Charm.sh Crush — TODO: verify state dir\n  crush-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/crush\" --write \"$HOME/.local/share/crush\" --write \"$HOME/.cache/crush\" -- crush \"$@\"\n  }\n\n  # OpenCode — TODO: verify state dir\n  opencode-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.opencode\" --write \"$HOME/.config/opencode\" -- opencode \"$@\"\n  }\n\n  # OpenClaw — TODO: verify state dir\n  openclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.openclaw\" --write \"$HOME/.config/openclaw\" -- openclaw \"$@\"\n  }\n\n  # NullClaw — TODO: verify state dir\n  nullclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nullclaw\" --write \"$HOME/.config/nullclaw\" -- nullclaw \"$@\"\n  }\n\n  # ZeroClaw — TODO: verify state dir\n  zeroclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.zeroclaw\" --write \"$HOME/.config/zeroclaw\" -- zeroclaw \"$@\"\n  }\n\n  # Nanobot — TODO: verify state dir\n  nanobot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nanobot\" --write \"$HOME/.config/nanobot\" -- nanobot \"$@\"\n  }\n\n  # Nanocoder — TODO: verify state dir\n  nanocoder-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nanocoder\" --write \"$HOME/.config/nanocoder\" -- nanocoder \"$@\"\n  }\n"
+      "common": "  # ----- shared: populate global _sbx_args array from SBX_* env vars -----\n  # Each wrapper calls _sbx_agent_args (which clears and populates\n  # _sbx_args) and then expands \"${_sbx_args[@]}\" quoted. We use an\n  # array (not unquoted stdout + word-splitting) because a value like\n  # SBX_NET='*:443' would otherwise glob-expand if the caller's cwd\n  # contained a matching file (e.g. /tmp/collision:443). Array\n  # expansion sidesteps globbing and word-splitting entirely.\n  _sbx_agent_args() {\n    _sbx_args=()\n    [[ -n \"${SBX_STRICT:-}\"    ]] && _sbx_args+=(--strict-reads)\n    [[ -n \"${SBX_TIMEOUT:-}\"   ]] && _sbx_args+=(--timeout \"$SBX_TIMEOUT\")\n    [[ -n \"${SBX_MAX_CPU:-}\"   ]] && _sbx_args+=(--max-cpu \"$SBX_MAX_CPU\")\n    [[ -n \"${SBX_MAX_PROCS:-}\" ]] && _sbx_args+=(--max-procs \"$SBX_MAX_PROCS\")\n    [[ -n \"${SBX_MAX_FILES:-}\" ]] && _sbx_args+=(--max-files \"$SBX_MAX_FILES\")\n    [[ -n \"${SBX_LOG_MAX_SIZE:-}\" ]] && _sbx_args+=(--log-max-size \"$SBX_LOG_MAX_SIZE\")\n    local v\n    # SBX_PASSENV is space-separated. Env var NAMES contain no\n    # whitespace or shell metacharacters, so unquoted word-splitting\n    # here is safe.\n    for v in ${SBX_PASSENV:-}; do\n      _sbx_args+=(--passenv \"$v\")\n    done\n    # SBX_NET_ALLOW_HOSTS takes precedence over SBX_NET. If set, we\n    # use proxy mode (sbx-agent auto-starts sbx-proxy) and do NOT\n    # pass --net — sbx-agent will internally configure the sandbox\n    # to only allow localhost:<proxy-port>.\n    if [[ -n \"${SBX_NET_ALLOW_HOSTS:-}\" ]]; then\n      local h\n      for h in ${SBX_NET_ALLOW_HOSTS}; do\n        _sbx_args+=(--net-allow-host \"$h\")\n      done\n    else\n      _sbx_args+=(--net \"${SBX_NET:-allow}\")\n    fi\n  }\n\n  # ----- sbx-here (legacy iteration-surface preset) -----\n  # Strict project-dir-only jail: writes restricted to $PWD (no\n  # $TMPDIR), network blocked. Ignores SBX_* env vars by design.\n  sbx-here() {\n    sbx-agent --no-tmpdir --net block -- \"$@\"\n  }\n\n  # ----- Per-agent jails -----\n  # Each wrapper populates _sbx_args via the helper, then expands it\n  # QUOTED into sbx-agent's argv. Quoting is what prevents glob and\n  # word-splitting bugs.\n\n  # Anthropic Claude Code\n  claude-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.claude\" -- claude \"$@\"\n  }\n\n  # OpenAI Codex CLI — TODO: verify state dir\n  codex-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.codex\" --write \"$HOME/.config/codex\" -- codex \"$@\"\n  }\n\n  # Google Gemini CLI — TODO: verify state dir\n  gemini-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.gemini\" --write \"$HOME/.config/gemini\" -- gemini \"$@\"\n  }\n\n  # GitHub Copilot CLI (gh extension) — usage: copilot-jail suggest \"...\"\n  copilot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/gh\" -- gh copilot \"$@\"\n  }\n\n  # Charm.sh Crush — TODO: verify state dir\n  crush-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/crush\" --write \"$HOME/.local/share/crush\" --write \"$HOME/.cache/crush\" -- crush \"$@\"\n  }\n\n  # OpenCode — state dirs verified empirically 2026-04-15 via fake-HOME\n  # trace: opencode bootstraps ~/.config/opencode for config,\n  # ~/.local/state/opencode for runtime state, ~/.local/share/opencode\n  # for installed binaries/logs, ~/.cache/opencode for version info.\n  # The old \"~/.opencode\" guess was never touched by the real binary.\n  opencode-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" \\\n      --write \"$HOME/.config/opencode\" \\\n      --write \"$HOME/.local/state/opencode\" \\\n      --write \"$HOME/.local/share/opencode\" \\\n      --write \"$HOME/.cache/opencode\" \\\n      -- opencode \"$@\"\n  }\n\n  # OpenClaw — TODO: verify state dir\n  openclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.openclaw\" --write \"$HOME/.config/openclaw\" -- openclaw \"$@\"\n  }\n\n  # NullClaw — TODO: verify state dir\n  nullclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nullclaw\" --write \"$HOME/.config/nullclaw\" -- nullclaw \"$@\"\n  }\n\n  # ZeroClaw — TODO: verify state dir\n  zeroclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.zeroclaw\" --write \"$HOME/.config/zeroclaw\" -- zeroclaw \"$@\"\n  }\n\n  # Nanobot — TODO: verify state dir\n  nanobot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nanobot\" --write \"$HOME/.config/nanobot\" -- nanobot \"$@\"\n  }\n\n  # Nanocoder — state dir verified empirically 2026-04-15 via fake-HOME\n  # trace: nanocoder uses the macOS-standard preferences path rather\n  # than a dotfile. Creates ~/Library/Preferences/nanocoder/ and\n  # .nano-coder-history inside it. Both old guesses (~/.nanocoder and\n  # ~/.config/nanocoder) were never touched.\n  nanocoder-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/Library/Preferences/nanocoder\" -- nanocoder \"$@\"\n  }\n"
     },
     "options": {
       "systems": [
@@ -70,6 +99,536 @@
       "install_id": "sbx-proxy",
       "store_path": "/nix/store/ggf0dla4kswrhrrhlym4xp2s5ip0a5ww-sbx-proxy-0.1.0",
       "system": "x86_64-darwin",
+      "priority": 5
+    },
+    {
+      "attr_path": "nanocoder",
+      "broken": false,
+      "derivation": "/nix/store/hv6vgxldwm7qlkw902p25z7xsdgqaq9l-nanocoder-1.24.1.drv",
+      "description": "A beautiful local-first coding agent running in your terminal - built by the community for the community",
+      "install_id": "nanocoder",
+      "license": "MIT",
+      "locked_url": "git@github.com:barstoolbluz/nix-ai-tools.git?rev=a3a28eb462220f5b452c3ad5911fa1b0850ac7cd",
+      "name": "nanocoder-1.24.1",
+      "pname": "nanocoder",
+      "rev": "a3a28eb462220f5b452c3ad5911fa1b0850ac7cd",
+      "rev_count": 81,
+      "rev_date": "2026-04-07T10:45:38Z",
+      "scrape_date": "2026-04-15T22:48:15.162353Z",
+      "stabilities": [
+        "unstable",
+        "staging",
+        "stable"
+      ],
+      "unfree": false,
+      "version": "1.24.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/iksfd9818kv78ln1mmdyng4ivrbw0pzn-nanocoder-1.24.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "nanocoder",
+      "priority": 5
+    },
+    {
+      "attr_path": "nanocoder",
+      "broken": false,
+      "derivation": "/nix/store/0vgg78s90awx0k3wg37cxxp77amjgk0n-nanocoder-1.24.1.drv",
+      "description": "A beautiful local-first coding agent running in your terminal - built by the community for the community",
+      "install_id": "nanocoder",
+      "license": "MIT",
+      "locked_url": "git@github.com:barstoolbluz/nix-ai-tools.git?rev=a3a28eb462220f5b452c3ad5911fa1b0850ac7cd",
+      "name": "nanocoder-1.24.1",
+      "pname": "nanocoder",
+      "rev": "a3a28eb462220f5b452c3ad5911fa1b0850ac7cd",
+      "rev_count": 81,
+      "rev_date": "2026-04-07T10:45:38Z",
+      "scrape_date": "2026-04-15T22:48:15.162358Z",
+      "stabilities": [
+        "unstable",
+        "staging",
+        "stable"
+      ],
+      "unfree": false,
+      "version": "1.24.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jmsx7n9gfgar98nz4icc6an7jrpivwgr-nanocoder-1.24.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "nanocoder",
+      "priority": 5
+    },
+    {
+      "attr_path": "nullclaw",
+      "broken": false,
+      "derivation": "/nix/store/xixcx42rvlr4kpvq9sf7ffjpl6rc9bjw-nullclaw-2026.4.7.drv",
+      "description": "Nullclaw - Fastest, smallest autonomous AI assistant infrastructure, written in Zig",
+      "install_id": "nullclaw",
+      "license": "MIT",
+      "locked_url": "git@github.com:barstoolbluz/nix-ai-tools.git?rev=079dac3f0b81c4aa5e3e409f78c48b75183fd42e",
+      "name": "nullclaw-2026.4.7",
+      "pname": "nullclaw",
+      "rev": "079dac3f0b81c4aa5e3e409f78c48b75183fd42e",
+      "rev_count": 92,
+      "rev_date": "2026-04-09T06:29:35Z",
+      "scrape_date": "2026-04-15T22:48:15.162371Z",
+      "stabilities": [
+        "unstable",
+        "staging",
+        "stable"
+      ],
+      "unfree": false,
+      "version": "2026.4.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/rjv13x2n0rai2rfkicfsfcrhrn3x581l-nullclaw-2026.4.7"
+      },
+      "system": "aarch64-darwin",
+      "group": "nullclaw",
+      "priority": 5
+    },
+    {
+      "attr_path": "nullclaw",
+      "broken": false,
+      "derivation": "/nix/store/1919q8yk102fidb7h3ar8fvk5kwz3qa2-nullclaw-2026.4.7.drv",
+      "description": "Nullclaw - Fastest, smallest autonomous AI assistant infrastructure, written in Zig",
+      "install_id": "nullclaw",
+      "license": "MIT",
+      "locked_url": "git@github.com:barstoolbluz/nix-ai-tools.git?rev=079dac3f0b81c4aa5e3e409f78c48b75183fd42e",
+      "name": "nullclaw-2026.4.7",
+      "pname": "nullclaw",
+      "rev": "079dac3f0b81c4aa5e3e409f78c48b75183fd42e",
+      "rev_count": 92,
+      "rev_date": "2026-04-09T06:29:35Z",
+      "scrape_date": "2026-04-15T22:48:15.162373Z",
+      "stabilities": [
+        "unstable",
+        "staging",
+        "stable"
+      ],
+      "unfree": false,
+      "version": "2026.4.7",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zi8sfdqda2birdcb0w1iqkydp2zck33d-nullclaw-2026.4.7"
+      },
+      "system": "x86_64-darwin",
+      "group": "nullclaw",
+      "priority": 5
+    },
+    {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/q0racxlfwyyyx84nh7hiywvh8yc1dv5w-claude-code-2.1.80.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "claude-code-2.1.80",
+      "pname": "claude-code",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T15:44:00.313657Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.80",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/hfxiqgi1jma9xindwpak0zaxq3gybxk8-claude-code-2.1.80"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/lsd7zbk9cmj4f875qx65nqpfn1jjjxvc-claude-code-2.1.80.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "claude-code-2.1.80",
+      "pname": "claude-code",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T17:02:41.693037Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.80",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/lh672n1dyssvdm4rmv855kxj6dv4l5sc-claude-code-2.1.80"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "codex",
+      "broken": false,
+      "derivation": "/nix/store/5fhva37xay88lff2gf8q5913pxhwdwvv-codex-0.115.0.drv",
+      "description": "Lightweight coding agent that runs in your terminal",
+      "install_id": "codex",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "codex-0.115.0",
+      "pname": "codex",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T15:44:00.357966Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.115.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/v1bhiywk497djnxn6gippp73mxb8kdmv-codex-0.115.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "codex",
+      "broken": false,
+      "derivation": "/nix/store/3abqp1n3m5cd2yixd3n05ba1g2wfb9yw-codex-0.115.0.drv",
+      "description": "Lightweight coding agent that runs in your terminal",
+      "install_id": "codex",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "codex-0.115.0",
+      "pname": "codex",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T17:02:41.734809Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.115.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0rbbzib7msb3g7jb0yyqnx4yic9ra027-codex-0.115.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "crush",
+      "broken": false,
+      "derivation": "/nix/store/wmypdsqnmgqfs0ciccpjm09gr7y01b8b-crush-0.49.0.drv",
+      "description": "Glamourous AI coding agent for your favourite terminal",
+      "install_id": "crush",
+      "license": "FSL-1.1-MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "crush-0.49.0",
+      "pname": "crush",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T15:44:00.478380Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "0.49.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/fp1rarfb176gjl8j9w91pqcniqqlrklf-crush-0.49.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "crush",
+      "broken": false,
+      "derivation": "/nix/store/rscbvi7lyh8fs4rxww6wpilrwr076ixq-crush-0.49.0.drv",
+      "description": "Glamourous AI coding agent for your favourite terminal",
+      "install_id": "crush",
+      "license": "FSL-1.1-MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "crush-0.49.0",
+      "pname": "crush",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T17:02:41.824731Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "0.49.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/7v23j9ra6vcjfpg2clqvich2q8azf99c-crush-0.49.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gemini-cli",
+      "broken": false,
+      "derivation": "/nix/store/vb5mp9y5fhzh16ig56zhzzafqf0nmd4j-gemini-cli-0.34.0.drv",
+      "description": "AI agent that brings the power of Gemini directly into your terminal",
+      "install_id": "gemini-cli",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "gemini-cli-0.34.0",
+      "pname": "gemini-cli",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T15:44:01.176844Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.34.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ncw1f7mpydgyr7hqwmjw50b9q46xvssl-gemini-cli-0.34.0"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gemini-cli",
+      "broken": false,
+      "derivation": "/nix/store/r93391sfd77cgxg1ry0pbcsarxcdxsxx-gemini-cli-0.34.0.drv",
+      "description": "AI agent that brings the power of Gemini directly into your terminal",
+      "install_id": "gemini-cli",
+      "license": "Apache-2.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "gemini-cli-0.34.0",
+      "pname": "gemini-cli",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T17:02:42.514432Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.34.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/jk3irmfw3lvlkgkamj6scsh47jpf86iz-gemini-cli-0.34.0"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gh",
+      "broken": false,
+      "derivation": "/nix/store/llazyj6bs6bid3cnpi71pc3lckgxfxxr-gh-2.88.1.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "gh",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "gh-2.88.1",
+      "pname": "gh",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T15:44:01.207962Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.88.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/mkjsxxbz3pkics0xnly7p8iqgr2awfgw-gh-2.88.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gh",
+      "broken": false,
+      "derivation": "/nix/store/cwxcsh7j200d0v3bxlnxspd73ijr9xnb-gh-2.88.1.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "gh",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "gh-2.88.1",
+      "pname": "gh",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T17:02:42.541326Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.88.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/5p7zchbbsws3d57mifs4h28fpb6jm2iv-gh-2.88.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "opencode",
+      "broken": false,
+      "derivation": "/nix/store/cbr72g13150hgm9y6c4h7mx2mlf0d5x4-opencode-1.2.27.drv",
+      "description": "AI coding agent built for the terminal",
+      "install_id": "opencode",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "opencode-1.2.27",
+      "pname": "opencode",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T15:44:31.288021Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.2.27",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/py2b28274xmcx4f5a0mw7vii5qd5x09w-opencode-1.2.27"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "opencode",
+      "broken": false,
+      "derivation": "/nix/store/5bmapr1j7z8hhay9lfw1hqi8q86a0rfq-opencode-1.2.27.drv",
+      "description": "AI coding agent built for the terminal",
+      "install_id": "opencode",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "opencode-1.2.27",
+      "pname": "opencode",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T17:03:13.217490Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.2.27",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vfpqsyivxrhzq269nhlzydxs11fzj6d9-opencode-1.2.27"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zeroclaw",
+      "broken": false,
+      "derivation": "/nix/store/0kxqn4ni4wxmx179shpx70m08nnpdn83-zeroclaw-0.5.1.drv",
+      "description": "Fast, small, and fully autonomous AI assistant infrastructure — deploy anywhere, swap anything",
+      "install_id": "zeroclaw",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "zeroclaw-0.5.1",
+      "pname": "zeroclaw",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T15:46:54.251742Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.5.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/n86hfb4w76ybfq3bq2cg4fr6xkakx3hy-zeroclaw-0.5.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "zeroclaw",
+      "broken": false,
+      "derivation": "/nix/store/dfy22mazm3mfmr4ckjm474xaa2kzgp2v-zeroclaw-0.5.1.drv",
+      "description": "Fast, small, and fully autonomous AI assistant infrastructure — deploy anywhere, swap anything",
+      "install_id": "zeroclaw",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "name": "zeroclaw-0.5.1",
+      "pname": "zeroclaw",
+      "rev": "6c9a78c09ff4d6c21d0319114873508a6ec01655",
+      "rev_count": 967235,
+      "rev_date": "2026-03-21T15:16:39Z",
+      "scrape_date": "2026-03-25T17:05:39.634506Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "0.5.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/2glfa20k2s0b3ank7fdr94pqibnx7skg-zeroclaw-0.5.1"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
       "priority": 5
     }
   ]
