@@ -342,12 +342,16 @@ authority="${HTTPS_PROXY#http://}"
   https://localhost:443/ 2>/dev/null || true
 ' >/dev/null 2>&1 || true
 sleep 0.3
-if grep -Eq '(dial_failed|blocked|no safe|no successful safe)' "$tmp_ssrf/sbx-proxy.log" 2>/dev/null; then
+# Tight regex: require a single log line that proves the proxy
+# reached the dial step AND isSafeRemoteIP rejected the resolved IP.
+# `dial_failed_after_client_ok` begins with `dial_failed`, so the
+# prefix matches either the SNI-off or the SNI-enforced code path.
+# The err field must also contain `blocked`, which is the marker
+# appended by resolveAndDial for IPs the SSRF guard refuses. An
+# unrelated deny (tls_sni_parse, not_in_allowlist, parse_err) will
+# NOT match because neither reason token begins with `dial_failed`.
+if grep -Eq 'reason=dial_failed[^ ]* .*blocked' "$tmp_ssrf/sbx-proxy.log" 2>/dev/null; then
   _record_pass "SSRF guard refuses dial to loopback (logged)"
-elif grep -q 'event=deny' "$tmp_ssrf/sbx-proxy.log" 2>/dev/null; then
-  # Fallback: some earlier deny (e.g. sni parse) still means the
-  # proxy terminated the attempt without dialing anything dangerous.
-  _record_pass "SSRF path terminated safely (deny logged before data flow)"
 else
   _record_fail "SSRF guard evidence" "proxy log: $(tail -5 "$tmp_ssrf/sbx-proxy.log" 2>/dev/null)"
 fi
@@ -697,6 +701,57 @@ else
   _record_fail "silent skip" "log written anyway"
 fi
 
+# --- ROADMAP #6: net_orig field preserves the original --net value ---
+# Covers the three kv-emit paths: bare block, bare allow, and the
+# host-list case where sbx-agent internally rewrites net_mode to
+# "hosts". Uses grep -F to avoid regex surprises with the asterisks.
+
+rm -f "$audit_dir/sbx-agent.log"
+FLOX_ENV_CACHE="$audit_dir" sbx-agent --net block -- true
+if grep -qF 'net=block net_orig=""' "$audit_dir/sbx-agent.log"; then
+  _record_pass "audit log: --net block → net_orig empty"
+else
+  _record_fail "audit log net_orig (block)" "$(tail -1 "$audit_dir/sbx-agent.log" 2>/dev/null)"
+fi
+
+rm -f "$audit_dir/sbx-agent.log"
+FLOX_ENV_CACHE="$audit_dir" sbx-agent --net allow -- true
+if grep -qF 'net=allow net_orig=""' "$audit_dir/sbx-agent.log"; then
+  _record_pass "audit log: --net allow → net_orig empty"
+else
+  _record_fail "audit log net_orig (allow)" "$(tail -1 "$audit_dir/sbx-agent.log" 2>/dev/null)"
+fi
+
+rm -f "$audit_dir/sbx-agent.log"
+FLOX_ENV_CACHE="$audit_dir" sbx-agent --net '*:443,*:80' -- true
+if grep -qF 'net=hosts net_orig="*:443,*:80"' "$audit_dir/sbx-agent.log"; then
+  _record_pass "audit log: --net host-list → net_orig preserves original"
+else
+  _record_fail "audit log net_orig (hosts)" "$(tail -1 "$audit_dir/sbx-agent.log" 2>/dev/null)"
+fi
+
+# --- ROADMAP #7: audit log rotates when it crosses 10 MB ------------
+# Pre-populate a >10 MB file, run sbx-agent once, assert the old file
+# was rotated to .log.1 (byte-for-byte preserved) and the new .log is
+# fresh and small (a single kv record is well under 1 KB).
+
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+# 11 MiB of zeros via explicit byte count (portable across GNU/BSD dd).
+# The test runs inside `flox activate -d ~/dev/sbx` where coreutils is
+# GNU, so `stat -c%s` is the matching size flag — same choice as the
+# agent-side rotation code in sbx-helpers.nix.
+dd if=/dev/zero of="$audit_dir/sbx-agent.log" bs=1048576 count=11 >/dev/null 2>&1
+big_size=$(stat -c%s "$audit_dir/sbx-agent.log" 2>/dev/null || echo 0)
+FLOX_ENV_CACHE="$audit_dir" sbx-agent -- true
+rotated_size=$(stat -c%s "$audit_dir/sbx-agent.log.1" 2>/dev/null || echo 0)
+new_size=$(stat -c%s "$audit_dir/sbx-agent.log" 2>/dev/null || echo 0)
+if [[ "$rotated_size" -eq "$big_size" && "$new_size" -gt 0 && "$new_size" -lt 10485760 ]]; then
+  _record_pass "audit log rotates to .log.1 when >10 MB"
+else
+  _record_fail "audit log rotation" "big=$big_size rotated=$rotated_size new=$new_size"
+fi
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+
 # --- sbx-here -------------------------------------------------------
 
 section "sbx-here (legacy preset)"
@@ -983,7 +1038,10 @@ authority="${HTTPS_PROXY#http://}"
   https://localhost:443/ 2>/dev/null || true
 ' >/dev/null 2>&1 || true
 sleep 0.3
-if grep -Eq '(dial_failed|blocked|no safe|no successful safe|event=deny)' \
+# Tight regex: same as the primary SSRF test. Requires a single log
+# line where reason begins with `dial_failed` AND the err payload
+# contains `blocked` (the SSRF-guard marker from resolveAndDial).
+if grep -Eq 'reason=dial_failed[^ ]* .*blocked' \
      "$tmp_ssrf_canary/sbx-proxy.log" 2>/dev/null; then
   _record_pass "canary tripwire: SSRF guard refuses localhost dial"
 else
