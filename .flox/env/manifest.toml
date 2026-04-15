@@ -16,13 +16,13 @@ schema-version = "1.11.0"
 sbx.store-path = "/nix/store/5dwg6sb6ysvm3h5aaaxa6mp88kl8rhi0-sbx-unstable-2026-04-13"
 sbx.systems = ["aarch64-darwin", "x86_64-darwin"]
 
-sbx-helpers.store-path = "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers"
+sbx-helpers.store-path = "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers"
 sbx-helpers.systems = ["aarch64-darwin", "x86_64-darwin"]
 
 # sbx-proxy: CONNECT-style hostname allowlisting proxy. Started on
 # demand by sbx-agent when --net-allow-host / SBX_NET_ALLOW_HOSTS is
 # set. Must be on PATH so sbx-agent can find it by name.
-sbx-proxy.store-path = "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0"
+sbx-proxy.store-path = "/nix/store/s6ry0bnfm125czig82yvpaik6zzx0g81-sbx-proxy-0.1.0"
 sbx-proxy.systems = ["aarch64-darwin", "x86_64-darwin"]
 
 [profile]
@@ -84,6 +84,22 @@ sbx-proxy.systems = ["aarch64-darwin", "x86_64-darwin"]
 #     (No SBX_MAX_MEM — macOS kernel does not implement settable
 #     RLIMIT_AS / RLIMIT_DATA / RLIMIT_RSS.)
 #
+#     SBX_LOG_MAX_SIZE Rotation threshold applied to both the agent
+#                      audit log ($FLOX_ENV_CACHE/sbx-agent.log) AND
+#                      the sbx-proxy event log. Accepts raw bytes or
+#                      a NUMBER with a K/M/G suffix (case-insensitive).
+#                      Examples:
+#                          SBX_LOG_MAX_SIZE=50M
+#                          SBX_LOG_MAX_SIZE=1G
+#                          SBX_LOG_MAX_SIZE=0    (disable rotation)
+#                      Default when unset: 10 MiB. Both sides use a
+#                      .log.1-only scheme — the most recent rotated
+#                      copy survives, older history is lost on the
+#                      next rotation. Pick a cap large enough to
+#                      survive a bursty workload without rotating
+#                      mid-session. For forensic retention, use an
+#                      external log collector and keep this high.
+#
 #     SBX_NET_ALLOW_HOSTS
 #                      Space-separated list of hostnames. Starts
 #                      sbx-proxy (CONNECT-style HTTPS allowlist)
@@ -122,6 +138,7 @@ common = '''
     [[ -n "${SBX_MAX_CPU:-}"   ]] && _sbx_args+=(--max-cpu "$SBX_MAX_CPU")
     [[ -n "${SBX_MAX_PROCS:-}" ]] && _sbx_args+=(--max-procs "$SBX_MAX_PROCS")
     [[ -n "${SBX_MAX_FILES:-}" ]] && _sbx_args+=(--max-files "$SBX_MAX_FILES")
+    [[ -n "${SBX_LOG_MAX_SIZE:-}" ]] && _sbx_args+=(--log-max-size "$SBX_LOG_MAX_SIZE")
     local v
     # SBX_PASSENV is space-separated. Env var NAMES contain no
     # whitespace or shell metacharacters, so unquoted word-splitting

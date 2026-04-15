@@ -11,14 +11,14 @@
         ]
       },
       "sbx-helpers": {
-        "store-path": "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers",
+        "store-path": "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers",
         "systems": [
           "aarch64-darwin",
           "x86_64-darwin"
         ]
       },
       "sbx-proxy": {
-        "store-path": "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0",
+        "store-path": "/nix/store/s6ry0bnfm125czig82yvpaik6zzx0g81-sbx-proxy-0.1.0",
         "systems": [
           "aarch64-darwin",
           "x86_64-darwin"
@@ -26,7 +26,7 @@
       }
     },
     "profile": {
-      "common": "  # ----- shared: populate global _sbx_args array from SBX_* env vars -----\n  # Each wrapper calls _sbx_agent_args (which clears and populates\n  # _sbx_args) and then expands \"${_sbx_args[@]}\" quoted. We use an\n  # array (not unquoted stdout + word-splitting) because a value like\n  # SBX_NET='*:443' would otherwise glob-expand if the caller's cwd\n  # contained a matching file (e.g. /tmp/collision:443). Array\n  # expansion sidesteps globbing and word-splitting entirely.\n  _sbx_agent_args() {\n    _sbx_args=()\n    [[ -n \"${SBX_STRICT:-}\"    ]] && _sbx_args+=(--strict-reads)\n    [[ -n \"${SBX_TIMEOUT:-}\"   ]] && _sbx_args+=(--timeout \"$SBX_TIMEOUT\")\n    [[ -n \"${SBX_MAX_CPU:-}\"   ]] && _sbx_args+=(--max-cpu \"$SBX_MAX_CPU\")\n    [[ -n \"${SBX_MAX_PROCS:-}\" ]] && _sbx_args+=(--max-procs \"$SBX_MAX_PROCS\")\n    [[ -n \"${SBX_MAX_FILES:-}\" ]] && _sbx_args+=(--max-files \"$SBX_MAX_FILES\")\n    local v\n    # SBX_PASSENV is space-separated. Env var NAMES contain no\n    # whitespace or shell metacharacters, so unquoted word-splitting\n    # here is safe.\n    for v in ${SBX_PASSENV:-}; do\n      _sbx_args+=(--passenv \"$v\")\n    done\n    # SBX_NET_ALLOW_HOSTS takes precedence over SBX_NET. If set, we\n    # use proxy mode (sbx-agent auto-starts sbx-proxy) and do NOT\n    # pass --net — sbx-agent will internally configure the sandbox\n    # to only allow localhost:<proxy-port>.\n    if [[ -n \"${SBX_NET_ALLOW_HOSTS:-}\" ]]; then\n      local h\n      for h in ${SBX_NET_ALLOW_HOSTS}; do\n        _sbx_args+=(--net-allow-host \"$h\")\n      done\n    else\n      _sbx_args+=(--net \"${SBX_NET:-allow}\")\n    fi\n  }\n\n  # ----- sbx-here (legacy iteration-surface preset) -----\n  # Strict project-dir-only jail: writes restricted to $PWD (no\n  # $TMPDIR), network blocked. Ignores SBX_* env vars by design.\n  sbx-here() {\n    sbx-agent --no-tmpdir --net block -- \"$@\"\n  }\n\n  # ----- Per-agent jails -----\n  # Each wrapper populates _sbx_args via the helper, then expands it\n  # QUOTED into sbx-agent's argv. Quoting is what prevents glob and\n  # word-splitting bugs.\n\n  # Anthropic Claude Code\n  claude-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.claude\" -- claude \"$@\"\n  }\n\n  # OpenAI Codex CLI — TODO: verify state dir\n  codex-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.codex\" --write \"$HOME/.config/codex\" -- codex \"$@\"\n  }\n\n  # Google Gemini CLI — TODO: verify state dir\n  gemini-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.gemini\" --write \"$HOME/.config/gemini\" -- gemini \"$@\"\n  }\n\n  # GitHub Copilot CLI (gh extension) — usage: copilot-jail suggest \"...\"\n  copilot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/gh\" -- gh copilot \"$@\"\n  }\n\n  # Charm.sh Crush — TODO: verify state dir\n  crush-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/crush\" --write \"$HOME/.local/share/crush\" --write \"$HOME/.cache/crush\" -- crush \"$@\"\n  }\n\n  # OpenCode — TODO: verify state dir\n  opencode-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.opencode\" --write \"$HOME/.config/opencode\" -- opencode \"$@\"\n  }\n\n  # OpenClaw — TODO: verify state dir\n  openclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.openclaw\" --write \"$HOME/.config/openclaw\" -- openclaw \"$@\"\n  }\n\n  # NullClaw — TODO: verify state dir\n  nullclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nullclaw\" --write \"$HOME/.config/nullclaw\" -- nullclaw \"$@\"\n  }\n\n  # ZeroClaw — TODO: verify state dir\n  zeroclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.zeroclaw\" --write \"$HOME/.config/zeroclaw\" -- zeroclaw \"$@\"\n  }\n\n  # Nanobot — TODO: verify state dir\n  nanobot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nanobot\" --write \"$HOME/.config/nanobot\" -- nanobot \"$@\"\n  }\n\n  # Nanocoder — TODO: verify state dir\n  nanocoder-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nanocoder\" --write \"$HOME/.config/nanocoder\" -- nanocoder \"$@\"\n  }\n"
+      "common": "  # ----- shared: populate global _sbx_args array from SBX_* env vars -----\n  # Each wrapper calls _sbx_agent_args (which clears and populates\n  # _sbx_args) and then expands \"${_sbx_args[@]}\" quoted. We use an\n  # array (not unquoted stdout + word-splitting) because a value like\n  # SBX_NET='*:443' would otherwise glob-expand if the caller's cwd\n  # contained a matching file (e.g. /tmp/collision:443). Array\n  # expansion sidesteps globbing and word-splitting entirely.\n  _sbx_agent_args() {\n    _sbx_args=()\n    [[ -n \"${SBX_STRICT:-}\"    ]] && _sbx_args+=(--strict-reads)\n    [[ -n \"${SBX_TIMEOUT:-}\"   ]] && _sbx_args+=(--timeout \"$SBX_TIMEOUT\")\n    [[ -n \"${SBX_MAX_CPU:-}\"   ]] && _sbx_args+=(--max-cpu \"$SBX_MAX_CPU\")\n    [[ -n \"${SBX_MAX_PROCS:-}\" ]] && _sbx_args+=(--max-procs \"$SBX_MAX_PROCS\")\n    [[ -n \"${SBX_MAX_FILES:-}\" ]] && _sbx_args+=(--max-files \"$SBX_MAX_FILES\")\n    [[ -n \"${SBX_LOG_MAX_SIZE:-}\" ]] && _sbx_args+=(--log-max-size \"$SBX_LOG_MAX_SIZE\")\n    local v\n    # SBX_PASSENV is space-separated. Env var NAMES contain no\n    # whitespace or shell metacharacters, so unquoted word-splitting\n    # here is safe.\n    for v in ${SBX_PASSENV:-}; do\n      _sbx_args+=(--passenv \"$v\")\n    done\n    # SBX_NET_ALLOW_HOSTS takes precedence over SBX_NET. If set, we\n    # use proxy mode (sbx-agent auto-starts sbx-proxy) and do NOT\n    # pass --net — sbx-agent will internally configure the sandbox\n    # to only allow localhost:<proxy-port>.\n    if [[ -n \"${SBX_NET_ALLOW_HOSTS:-}\" ]]; then\n      local h\n      for h in ${SBX_NET_ALLOW_HOSTS}; do\n        _sbx_args+=(--net-allow-host \"$h\")\n      done\n    else\n      _sbx_args+=(--net \"${SBX_NET:-allow}\")\n    fi\n  }\n\n  # ----- sbx-here (legacy iteration-surface preset) -----\n  # Strict project-dir-only jail: writes restricted to $PWD (no\n  # $TMPDIR), network blocked. Ignores SBX_* env vars by design.\n  sbx-here() {\n    sbx-agent --no-tmpdir --net block -- \"$@\"\n  }\n\n  # ----- Per-agent jails -----\n  # Each wrapper populates _sbx_args via the helper, then expands it\n  # QUOTED into sbx-agent's argv. Quoting is what prevents glob and\n  # word-splitting bugs.\n\n  # Anthropic Claude Code\n  claude-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.claude\" -- claude \"$@\"\n  }\n\n  # OpenAI Codex CLI — TODO: verify state dir\n  codex-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.codex\" --write \"$HOME/.config/codex\" -- codex \"$@\"\n  }\n\n  # Google Gemini CLI — TODO: verify state dir\n  gemini-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.gemini\" --write \"$HOME/.config/gemini\" -- gemini \"$@\"\n  }\n\n  # GitHub Copilot CLI (gh extension) — usage: copilot-jail suggest \"...\"\n  copilot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/gh\" -- gh copilot \"$@\"\n  }\n\n  # Charm.sh Crush — TODO: verify state dir\n  crush-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.config/crush\" --write \"$HOME/.local/share/crush\" --write \"$HOME/.cache/crush\" -- crush \"$@\"\n  }\n\n  # OpenCode — TODO: verify state dir\n  opencode-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.opencode\" --write \"$HOME/.config/opencode\" -- opencode \"$@\"\n  }\n\n  # OpenClaw — TODO: verify state dir\n  openclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.openclaw\" --write \"$HOME/.config/openclaw\" -- openclaw \"$@\"\n  }\n\n  # NullClaw — TODO: verify state dir\n  nullclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nullclaw\" --write \"$HOME/.config/nullclaw\" -- nullclaw \"$@\"\n  }\n\n  # ZeroClaw — TODO: verify state dir\n  zeroclaw-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.zeroclaw\" --write \"$HOME/.config/zeroclaw\" -- zeroclaw \"$@\"\n  }\n\n  # Nanobot — TODO: verify state dir\n  nanobot-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nanobot\" --write \"$HOME/.config/nanobot\" -- nanobot \"$@\"\n  }\n\n  # Nanocoder — TODO: verify state dir\n  nanocoder-jail() {\n    _sbx_agent_args\n    sbx-agent \"${_sbx_args[@]}\" --write \"$HOME/.nanocoder\" --write \"$HOME/.config/nanocoder\" -- nanocoder \"$@\"\n  }\n"
     },
     "options": {
       "systems": [
@@ -50,25 +50,25 @@
     },
     {
       "install_id": "sbx-helpers",
-      "store_path": "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers",
+      "store_path": "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers",
       "system": "aarch64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-helpers",
-      "store_path": "/nix/store/794i40d2vi5jsf9znb76zvm25453h3dl-sbx-helpers",
+      "store_path": "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers",
       "system": "x86_64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-proxy",
-      "store_path": "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0",
+      "store_path": "/nix/store/s6ry0bnfm125czig82yvpaik6zzx0g81-sbx-proxy-0.1.0",
       "system": "aarch64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-proxy",
-      "store_path": "/nix/store/mbicb4kwi9rvq69qzp2j07ks2dhwj1sv-sbx-proxy-0.1.0",
+      "store_path": "/nix/store/s6ry0bnfm125czig82yvpaik6zzx0g81-sbx-proxy-0.1.0",
       "system": "x86_64-darwin",
       "priority": 5
     }
