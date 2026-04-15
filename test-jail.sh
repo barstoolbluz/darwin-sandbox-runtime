@@ -839,6 +839,60 @@ for _ in $(seq 1 20); do
   sleep 0.1
 done
 
+# --- parse_bytes octal-trap regressions -----------------------------
+# parse_bytes used to do bash arithmetic directly on the captured
+# digit string, and bash's $((expr)) treats leading-zero literals
+# as octal: 010 → 8, 08/09 → arithmetic error rc=1. SBX_LOG_MAX_SIZE
+# from a script that zero-pads its numeric fields would silently
+# misconfigure (010M → 8 MiB) or noisily explode (09M → rc=1 with
+# bash's raw octal parse error). Forced base-10 normalization via
+# 10#$num after the regex match fixes both. These three tests pin
+# the expected behavior so the trap can't return on a refactor.
+
+# (g) leading-zero decimal: 010M must equal 10 MiB, not 8 MiB
+tmp_oct=$(mktemp -d)
+FLOX_ENV_CACHE="$tmp_oct" sbx-agent --log-max-size 010M --net-allow-host "$proxy_test_host" --passenv-all -- true >/dev/null 2>&1 || true
+sleep 0.2
+if grep -q 'log_max_size=10485760' "$tmp_oct/sbx-proxy.log" 2>/dev/null; then
+  _record_pass "parse_bytes 010M normalizes to 10 MiB (not octal 8 MiB)"
+else
+  _record_fail "parse_bytes 010M octal trap" "$(grep event=start "$tmp_oct/sbx-proxy.log" 2>/dev/null | sed -n 's/.*log_max_size=\([0-9]*\).*/got=\1/p')"
+fi
+rm -rf "$tmp_oct"
+for _ in $(seq 1 20); do pgrep -f 'sbx-proxy --listen' >/dev/null 2>&1 || break; sleep 0.1; done
+
+# (h) invalid-octal digits: 08M must succeed at 8 MiB, not blow up
+# with a raw bash arithmetic error and rc=1
+tmp_oct=$(mktemp -d)
+if FLOX_ENV_CACHE="$tmp_oct" sbx-agent --log-max-size 08M --net-allow-host "$proxy_test_host" --passenv-all -- true >/dev/null 2>&1; then
+  sleep 0.2
+  if grep -q 'log_max_size=8388608' "$tmp_oct/sbx-proxy.log" 2>/dev/null; then
+    _record_pass "parse_bytes 08M parses as decimal 8 MiB (not bash octal error)"
+  else
+    _record_fail "parse_bytes 08M wrong value" "$(grep event=start "$tmp_oct/sbx-proxy.log" 2>/dev/null | sed -n 's/.*log_max_size=\([0-9]*\).*/got=\1/p')"
+  fi
+else
+  _record_fail "parse_bytes 08M rc!=0" "exit code $? (octal arithmetic error?)"
+fi
+rm -rf "$tmp_oct"
+for _ in $(seq 1 20); do pgrep -f 'sbx-proxy --listen' >/dev/null 2>&1 || break; sleep 0.1; done
+
+# (i) all-zeros: 00 must be parseable and disable rotation, not blow
+# up with rc=1 from bash treating "00" as a malformed octal literal
+tmp_oct=$(mktemp -d)
+if FLOX_ENV_CACHE="$tmp_oct" sbx-agent --log-max-size 00 --net-allow-host "$proxy_test_host" --passenv-all -- true >/dev/null 2>&1; then
+  sleep 0.2
+  if grep -q 'log_max_size=0' "$tmp_oct/sbx-proxy.log" 2>/dev/null; then
+    _record_pass "parse_bytes 00 normalizes to 0 (rotation disabled)"
+  else
+    _record_fail "parse_bytes 00 wrong value" "$(grep event=start "$tmp_oct/sbx-proxy.log" 2>/dev/null | sed -n 's/.*log_max_size=\([0-9]*\).*/got=\1/p')"
+  fi
+else
+  _record_fail "parse_bytes 00 rc!=0" "exit code $?"
+fi
+rm -rf "$tmp_oct"
+for _ in $(seq 1 20); do pgrep -f 'sbx-proxy --listen' >/dev/null 2>&1 || break; sleep 0.1; done
+
 # --- sbx-here -------------------------------------------------------
 
 section "sbx-here (legacy preset)"
