@@ -893,6 +893,101 @@ fi
 rm -rf "$tmp_oct"
 for _ in $(seq 1 20); do pgrep -f 'sbx-proxy --listen' >/dev/null 2>&1 || break; sleep 0.1; done
 
+# --- parse_bytes overflow regressions -------------------------------
+# A separate class of trap from the octal case above. Previous
+# parse_bytes regex accepted arbitrarily long digit strings, letting
+# $((num * 1024*1024*1024)) silently wrap int64 on overflow. Some
+# wrap patterns landed positive-but-larger-than-num (e.g.
+# 999999999999999999M → 7.7e18), which defeats the naive
+# "result < num" detector I first tried. The shipping fix instead
+# caps the regex at 18 digits and checks num against a per-suffix
+# max_safe constant BEFORE multiplying. Each test below has been
+# traced against both failure modes (the int64 wrap and the v1
+# detector gap).
+
+# (j) suffix overflow: 10000000000G (10 billion G) → rc=2
+if sbx-agent --log-max-size 10000000000G --dump-policy >/dev/null 2>/tmp/lms-err; then
+  _record_fail "parse_bytes 10000000000G unexpectedly accepted" "$(cat /tmp/lms-err)"
+else
+  rc=$?
+  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"value too large"* ]]; then
+    _record_pass "parse_bytes 10000000000G rejected as too large"
+  else
+    _record_fail "parse_bytes 10000000000G wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
+  fi
+fi
+rm -f /tmp/lms-err
+
+# (k) suffix overflow that WRAPS POSITIVE in v1 detector:
+# 999999999999999999M — critical regression guard, would have shipped
+# broken under the result<num heuristic
+if sbx-agent --log-max-size 999999999999999999M --dump-policy >/dev/null 2>/tmp/lms-err; then
+  _record_fail "parse_bytes 999999999999999999M unexpectedly accepted" "$(cat /tmp/lms-err)"
+else
+  rc=$?
+  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"value too large"* ]]; then
+    _record_pass "parse_bytes 999999999999999999M rejected (positive-wrap case)"
+  else
+    _record_fail "parse_bytes 999999999999999999M wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
+  fi
+fi
+rm -f /tmp/lms-err
+
+# (l) regex-level reject: 20-digit pure decimal, would overflow
+# 10#$num normalization
+if sbx-agent --log-max-size 99999999999999999999 --dump-policy >/dev/null 2>/tmp/lms-err; then
+  _record_fail "parse_bytes 20-digit unexpectedly accepted" "$(cat /tmp/lms-err)"
+else
+  rc=$?
+  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"max 18 digits"* ]]; then
+    _record_pass "parse_bytes 20-digit rejected at regex"
+  else
+    _record_fail "parse_bytes 20-digit wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
+  fi
+fi
+rm -f /tmp/lms-err
+
+# (m) regex-level reject: 19-digit pure decimal (just over limit)
+if sbx-agent --log-max-size 9999999999999999999 --dump-policy >/dev/null 2>/tmp/lms-err; then
+  _record_fail "parse_bytes 19-digit unexpectedly accepted" "$(cat /tmp/lms-err)"
+else
+  rc=$?
+  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"max 18 digits"* ]]; then
+    _record_pass "parse_bytes 19-digit rejected at regex"
+  else
+    _record_fail "parse_bytes 19-digit wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
+  fi
+fi
+rm -f /tmp/lms-err
+
+# (n) boundary-hold: 8589934591G (max safe for G suffix) must ACCEPT
+tmp_oct=$(mktemp -d)
+if FLOX_ENV_CACHE="$tmp_oct" sbx-agent --log-max-size 8589934591G --net-allow-host "$proxy_test_host" --passenv-all -- true >/dev/null 2>&1; then
+  sleep 0.15
+  if grep -q 'log_max_size=9223372035781033984' "$tmp_oct/sbx-proxy.log" 2>/dev/null; then
+    _record_pass "parse_bytes 8589934591G at-boundary accepted and forwarded"
+  else
+    _record_fail "parse_bytes 8589934591G wrong forwarded value" "$(grep event=start "$tmp_oct/sbx-proxy.log" 2>/dev/null | sed -n 's/.*log_max_size=\(-*[0-9]*\).*/got=\1/p')"
+  fi
+else
+  _record_fail "parse_bytes 8589934591G at-boundary rejected" "rc=$?"
+fi
+rm -rf "$tmp_oct"
+for _ in $(seq 1 20); do pgrep -f 'sbx-proxy --listen' >/dev/null 2>&1 || break; sleep 0.1; done
+
+# (o) boundary-reject: 8589934592G (one over max safe) must REJECT
+if sbx-agent --log-max-size 8589934592G --dump-policy >/dev/null 2>/tmp/lms-err; then
+  _record_fail "parse_bytes 8589934592G unexpectedly accepted" "$(cat /tmp/lms-err)"
+else
+  rc=$?
+  if [[ "$rc" -eq 2 && "$(cat /tmp/lms-err)" == *"value too large"* ]]; then
+    _record_pass "parse_bytes 8589934592G one-over-boundary rejected"
+  else
+    _record_fail "parse_bytes 8589934592G wrong rejection" "rc=$rc msg=$(cat /tmp/lms-err)"
+  fi
+fi
+rm -f /tmp/lms-err
+
 # --- sbx-here -------------------------------------------------------
 
 section "sbx-here (legacy preset)"
