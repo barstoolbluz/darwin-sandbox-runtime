@@ -752,6 +752,93 @@ else
 fi
 rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
 
+# --- --log-max-size override (SBX_LOG_MAX_SIZE surfaces this) -------
+# Six tests covering: default unchanged, smaller cap rotates earlier,
+# larger cap defers rotation, 0 disables, invalid value errors, and
+# forwarding into sbx-proxy's event=start line.
+
+# (a) smaller cap: 5 MiB threshold, 6 MiB pre-populated → rotate
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+dd if=/dev/zero of="$audit_dir/sbx-agent.log" bs=1048576 count=6 >/dev/null 2>&1
+pre_size=$(stat -c%s "$audit_dir/sbx-agent.log" 2>/dev/null || echo 0)
+FLOX_ENV_CACHE="$audit_dir" sbx-agent --log-max-size 5M -- true
+rotated_5m=$(stat -c%s "$audit_dir/sbx-agent.log.1" 2>/dev/null || echo 0)
+new_5m=$(stat -c%s "$audit_dir/sbx-agent.log" 2>/dev/null || echo 0)
+if [[ "$rotated_5m" -eq "$pre_size" && "$new_5m" -gt 0 && "$new_5m" -lt 6291456 ]]; then
+  _record_pass "--log-max-size 5M rotates a 6 MiB audit log"
+else
+  _record_fail "--log-max-size 5M" "pre=$pre_size rotated=$rotated_5m new=$new_5m"
+fi
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+
+# (b) larger cap: 20 MiB threshold, 11 MiB pre-populated → do NOT rotate
+dd if=/dev/zero of="$audit_dir/sbx-agent.log" bs=1048576 count=11 >/dev/null 2>&1
+pre_size=$(stat -c%s "$audit_dir/sbx-agent.log" 2>/dev/null || echo 0)
+FLOX_ENV_CACHE="$audit_dir" sbx-agent --log-max-size 20M -- true
+new_20m=$(stat -c%s "$audit_dir/sbx-agent.log" 2>/dev/null || echo 0)
+# Expected: file was pre_size bytes of zeros; sbx-agent appended a
+# short audit record, so the new size is pre_size + a few hundred
+# bytes. .log.1 must NOT exist — no rotation fired.
+if [[ ! -e "$audit_dir/sbx-agent.log.1" && "$new_20m" -gt "$pre_size" ]]; then
+  _record_pass "--log-max-size 20M defers rotation for 11 MiB file"
+else
+  _record_fail "--log-max-size 20M" "pre=$pre_size new=$new_20m .1-exists=$([[ -e "$audit_dir/sbx-agent.log.1" ]] && echo yes || echo no)"
+fi
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+
+# (c) 0 disables rotation entirely: 11 MiB pre-populated → no rotation
+dd if=/dev/zero of="$audit_dir/sbx-agent.log" bs=1048576 count=11 >/dev/null 2>&1
+FLOX_ENV_CACHE="$audit_dir" sbx-agent --log-max-size 0 -- true
+if [[ ! -e "$audit_dir/sbx-agent.log.1" ]]; then
+  _record_pass "--log-max-size 0 disables rotation"
+else
+  _record_fail "--log-max-size 0" ".1 exists unexpectedly"
+fi
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+
+# (d) invalid value: sbx-agent must exit 2 with a clear error
+if out=$(sbx-agent --log-max-size bogus -- true 2>&1); then
+  _record_fail "--log-max-size bogus (no error)" "unexpected success: $out"
+else
+  rc=$?
+  if [[ "$rc" -eq 2 ]] && [[ "$out" == *"invalid size value"* ]]; then
+    _record_pass "--log-max-size bogus errors with rc=2"
+  else
+    _record_fail "--log-max-size bogus" "rc=$rc out=$out"
+  fi
+fi
+
+# (e) default unchanged: omitting --log-max-size still rotates at 10 MiB
+# (this is the same coverage as the existing rotation test above, but
+# reasserted here to guard against a regression where the new default
+# plumbing silently disables rotation when no flag is passed)
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+dd if=/dev/zero of="$audit_dir/sbx-agent.log" bs=1048576 count=11 >/dev/null 2>&1
+FLOX_ENV_CACHE="$audit_dir" sbx-agent -- true
+if [[ -e "$audit_dir/sbx-agent.log.1" ]]; then
+  _record_pass "default --log-max-size (omitted) still rotates at 10 MiB"
+else
+  _record_fail "default rotation regression" "no .log.1 after default-cap rotation"
+fi
+rm -f "$audit_dir/sbx-agent.log" "$audit_dir/sbx-agent.log.1"
+
+# (f) proxy forwarding: --log-max-size N propagates into sbx-proxy's
+# event=start line, visible as log_max_size=<bytes-form>
+tmp_lms=$(mktemp -d)
+FLOX_ENV_CACHE="$tmp_lms" sbx-agent --log-max-size 50M --net-allow-host "$proxy_test_host" --passenv-all -- true >/dev/null 2>&1 || true
+sleep 0.2
+if grep -q 'log_max_size=52428800' "$tmp_lms/sbx-proxy.log" 2>/dev/null; then
+  _record_pass "--log-max-size forwards to sbx-proxy (event=start shows 52428800)"
+else
+  _record_fail "--log-max-size proxy forward" "$(grep event=start "$tmp_lms/sbx-proxy.log" 2>/dev/null | head -1)"
+fi
+rm -rf "$tmp_lms"
+# Drain any lingering proxy from this section before moving on.
+for _ in $(seq 1 20); do
+  pgrep -f 'sbx-proxy --listen' >/dev/null 2>&1 || break
+  sleep 0.1
+done
+
 # --- sbx-here -------------------------------------------------------
 
 section "sbx-here (legacy preset)"
