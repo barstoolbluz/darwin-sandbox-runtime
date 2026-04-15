@@ -16,7 +16,7 @@ schema-version = "1.11.0"
 sbx.store-path = "/nix/store/5dwg6sb6ysvm3h5aaaxa6mp88kl8rhi0-sbx-unstable-2026-04-13"
 sbx.systems = ["aarch64-darwin", "x86_64-darwin"]
 
-sbx-helpers.store-path = "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers"
+sbx-helpers.store-path = "/nix/store/l7qrw1xnxyalvx1nvnvnn806j68z56z7-sbx-helpers"
 sbx-helpers.systems = ["aarch64-darwin", "x86_64-darwin"]
 
 # sbx-proxy: CONNECT-style hostname allowlisting proxy. Started on

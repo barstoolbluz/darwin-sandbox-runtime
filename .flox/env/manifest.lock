@@ -11,7 +11,7 @@
         ]
       },
       "sbx-helpers": {
-        "store-path": "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers",
+        "store-path": "/nix/store/l7qrw1xnxyalvx1nvnvnn806j68z56z7-sbx-helpers",
         "systems": [
           "aarch64-darwin",
           "x86_64-darwin"
@@ -50,13 +50,13 @@
     },
     {
       "install_id": "sbx-helpers",
-      "store_path": "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers",
+      "store_path": "/nix/store/l7qrw1xnxyalvx1nvnvnn806j68z56z7-sbx-helpers",
       "system": "aarch64-darwin",
       "priority": 5
     },
     {
       "install_id": "sbx-helpers",
-      "store_path": "/nix/store/i3hyrqci51im7wvhv9f81a44avsxi44r-sbx-helpers",
+      "store_path": "/nix/store/l7qrw1xnxyalvx1nvnvnn806j68z56z7-sbx-helpers",
       "system": "x86_64-darwin",
       "priority": 5
     },
