@@ -1184,6 +1184,134 @@ run_match "SBX_NET_ALLOW_HOSTS unset → no HTTPS_PROXY in child" \
   "HTTPS_PROXY=UNSET" \
   _claude_envdump_jail
 
+# --- SBX_JAIL_HOME state-dir redirect --------------------------------
+# Verifies the _sbx_jail_write helper in [profile.common]. Uses the
+# existing fake-agent pattern: a fake binary that writes a marker file
+# to its config dir, then we check WHERE the marker landed.
+
+section "SBX_JAIL_HOME: state-dir redirect"
+
+# Fake agent that writes a marker to CLAUDE_CONFIG_DIR (native override)
+cat > "$fake_bin/claude-marker" <<'FAKE'
+#!/usr/bin/env bash
+# If CLAUDE_CONFIG_DIR is set, write there. Otherwise, write to $HOME/.claude.
+dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+mkdir -p "$dir"
+echo "MARKER-$$" > "$dir/jail-test-marker.txt"
+echo "claude-marker wrote to $dir"
+FAKE
+chmod +x "$fake_bin/claude-marker"
+
+# Fake agent that writes to $HOME/.codex (HOME override — no native env var)
+cat > "$fake_bin/codex-marker" <<'FAKE'
+#!/usr/bin/env bash
+dir="$HOME/.codex"
+mkdir -p "$dir"
+echo "MARKER-$$" > "$dir/jail-test-marker.txt"
+echo "codex-marker wrote to $dir"
+FAKE
+chmod +x "$fake_bin/codex-marker"
+
+# Wrapper that uses claude's redirect logic but calls the marker binary
+_claude_marker_jail() {
+  _sbx_agent_args
+  if _sbx_jail_write claude; then
+    sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" claude-marker "$@"
+  else
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.claude" -- claude-marker "$@"
+  fi
+}
+
+# Wrapper for codex marker (HOME override path)
+_codex_marker_jail() {
+  _sbx_agent_args
+  if _sbx_jail_write codex; then
+    sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" codex-marker "$@"
+  else
+    sbx-agent "${_sbx_args[@]}" --write "$HOME/.codex" -- codex-marker "$@"
+  fi
+}
+
+# (a) SBX_JAIL_HOME unset → marker lands in $HOME/.claude (default)
+unset SBX_JAIL_HOME
+rm -f "$HOME/.claude/jail-test-marker.txt"
+_claude_marker_jail >/dev/null 2>&1
+if [[ -f "$HOME/.claude/jail-test-marker.txt" ]]; then
+  _record_pass "SBX_JAIL_HOME unset: claude writes to \$HOME/.claude"
+else
+  _record_fail "SBX_JAIL_HOME unset" "marker not found at \$HOME/.claude"
+fi
+rm -f "$HOME/.claude/jail-test-marker.txt"
+
+# (b) SBX_JAIL_HOME=1 + native-override agent (claude) → marker in state dir
+jail_test_cache=$(mktemp -d)
+SBX_JAIL_HOME=1 FLOX_ENV_CACHE="$jail_test_cache" _claude_marker_jail >/dev/null 2>&1
+state_marker="$jail_test_cache/agent-state/claude/jail-test-marker.txt"
+home_marker="$HOME/.claude/jail-test-marker.txt"
+if [[ -f "$state_marker" && ! -f "$home_marker" ]]; then
+  _record_pass "SBX_JAIL_HOME=1: claude marker in \$FLOX_ENV_CACHE/agent-state/claude/"
+elif [[ -f "$state_marker" && -f "$home_marker" ]]; then
+  _record_fail "SBX_JAIL_HOME claude" "marker in BOTH state dir and HOME (double-write)"
+else
+  _record_fail "SBX_JAIL_HOME claude" "state=$([[ -f "$state_marker" ]] && echo yes || echo no) home=$([[ -f "$home_marker" ]] && echo yes || echo no)"
+fi
+rm -rf "$jail_test_cache"
+rm -f "$HOME/.claude/jail-test-marker.txt"
+
+# (c) SBX_JAIL_HOME=1 + HOME-override agent (codex) → marker in state dir
+jail_test_cache=$(mktemp -d)
+SBX_JAIL_HOME=1 FLOX_ENV_CACHE="$jail_test_cache" _codex_marker_jail >/dev/null 2>&1
+state_marker="$jail_test_cache/agent-state/codex/.codex/jail-test-marker.txt"
+home_marker="$HOME/.codex/jail-test-marker.txt"
+if [[ -f "$state_marker" && ! -f "$home_marker" ]]; then
+  _record_pass "SBX_JAIL_HOME=1: codex marker in state dir (HOME override)"
+elif [[ -f "$state_marker" && -f "$home_marker" ]]; then
+  _record_fail "SBX_JAIL_HOME codex" "marker in BOTH state dir and HOME"
+else
+  _record_fail "SBX_JAIL_HOME codex" "state=$([[ -f "$state_marker" ]] && echo yes || echo no) home=$([[ -f "$home_marker" ]] && echo yes || echo no)"
+fi
+rm -rf "$jail_test_cache"
+rm -f "$HOME/.codex/jail-test-marker.txt"
+
+# (d) SBX_JAIL_HOME=1 + --dump-policy: policy shows redirected --write
+# --dump-policy is an sbx-agent flag (before --), so we can't test it
+# via the wrapper (which puts $@ after --). Instead, replicate the
+# wrapper's _sbx_jail_write logic then call sbx-agent --dump-policy
+# directly. Save/restore FLOX_ENV_CACHE since the helpers read it.
+jail_test_cache=$(mktemp -d)
+saved_fec="${FLOX_ENV_CACHE:-}"
+SBX_JAIL_HOME=1
+FLOX_ENV_CACHE="$jail_test_cache"
+export SBX_JAIL_HOME FLOX_ENV_CACHE
+_sbx_agent_args
+if _sbx_jail_write claude; then
+  policy=$(sbx-agent "${_sbx_args[@]}" --dump-policy 2>/dev/null)
+  if echo "$policy" | grep -q "agent-state/claude"; then
+    _record_pass "SBX_JAIL_HOME + --dump-policy shows redirected write path"
+  else
+    _record_fail "dump-policy with jail-home" "policy does not contain agent-state/claude"
+  fi
+else
+  _record_fail "dump-policy jail-home" "_sbx_jail_write returned 1"
+fi
+unset SBX_JAIL_HOME
+FLOX_ENV_CACHE="$saved_fec"
+[[ -n "$FLOX_ENV_CACHE" ]] && export FLOX_ENV_CACHE || unset FLOX_ENV_CACHE
+rm -rf "$jail_test_cache"
+
+# (e) SBX_STATE_DIR override: state goes to the custom root
+custom_state=$(mktemp -d)
+SBX_JAIL_HOME=1 SBX_STATE_DIR="$custom_state" _claude_marker_jail >/dev/null 2>&1
+if [[ -f "$custom_state/claude/jail-test-marker.txt" ]]; then
+  _record_pass "SBX_STATE_DIR override routes state to custom root"
+else
+  _record_fail "SBX_STATE_DIR override" "marker not found at $custom_state/claude/"
+fi
+rm -rf "$custom_state"
+
+# Clean up: make sure SBX_JAIL_HOME is unset for subsequent tests
+unset SBX_JAIL_HOME
+
 # --- canaries ------------------------------------------------------
 # Tripwires for the five core protections. Each canary has both a
 # "positive control" (the baseline behavior when the protection is

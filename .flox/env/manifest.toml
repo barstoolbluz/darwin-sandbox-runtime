@@ -125,6 +125,34 @@ gh.pkg-path = "gh"
 #                      $FLOX_ENV_CACHE/sbx-proxy.log for per-connection
 #                      allow/deny events.
 #
+#     SBX_JAIL_HOME    If set (any non-empty value), redirects each
+#                      agent's state directory into a per-agent subdir
+#                      of $FLOX_ENV_CACHE/agent-state/ (or SBX_STATE_DIR
+#                      if set). Agents that support a native config-dir
+#                      env var are redirected cleanly:
+#                        claude   → CLAUDE_CONFIG_DIR
+#                        gh       → GH_CONFIG_DIR
+#                        opencode → XDG_CONFIG_HOME et al.
+#                        nullclaw → NULLCLAW_HOME
+#                        zeroclaw → ZEROCLAW_CONFIG_DIR
+#                        nanocoder→ NANOCODER_CONFIG_DIR
+#                      Agents without a native override (codex, gemini,
+#                      crush, openclaw, nanobot) fall back to HOME
+#                      override (HOME=$state_dir), which means reads
+#                      of $HOME/.gitconfig etc. from inside the jail
+#                      will not find the real files. Use SBX_PASSENV
+#                      with GIT_CONFIG_GLOBAL or similar to restore
+#                      specific reads if needed.
+#                      Default when unset: agents write to their normal
+#                      $HOME dirs (current behavior, no redirect).
+#
+#     SBX_STATE_DIR    Override the root directory for jailed agent
+#                      state. Default when unset: $FLOX_ENV_CACHE/
+#                      agent-state. Each agent gets a subdir named
+#                      after itself ($SBX_STATE_DIR/<agent-name>/).
+#                      Set this to a user-private path if FLOX_ENV_CACHE
+#                      falls back to /tmp (which is world-readable).
+#
 # Each wrapper assumes the underlying agent binary (`claude`, `codex`,
 # etc.) is installed and on $PATH. This env does not install them.
 #
@@ -180,6 +208,53 @@ common = '''
     fi
   }
 
+  # ----- shared: SBX_JAIL_HOME state-dir redirect ------------------
+  # When SBX_JAIL_HOME is set, each agent's state writes are
+  # redirected into a per-agent subdir of $FLOX_ENV_CACHE/agent-state
+  # (or $SBX_STATE_DIR if set). Agents with a native config-dir env
+  # var use that; the rest fall back to HOME override. The redirect
+  # is injected via an `env KEY=VAL` prefix that runs INSIDE the
+  # sandbox — it adds to the scrubbed env without polluting the
+  # outer shell and without needing --passenv.
+  _sbx_state_dir() {
+    local agent="$1"
+    local dir="${SBX_STATE_DIR:-${FLOX_ENV_CACHE:-${TMPDIR:-/tmp}}/agent-state}/$agent"
+    mkdir -p "$dir"
+    printf '%s' "$dir"
+  }
+
+  # Populates _sbx_jail_env (command prefix array) and appends
+  # --write to _sbx_args. Returns 0 if jail-home is active (caller
+  # should use _sbx_jail_env), 1 if inactive (caller uses default
+  # --write paths).
+  _sbx_jail_write() {
+    local agent="$1"
+    _sbx_jail_env=()
+    [[ -n "${SBX_JAIL_HOME:-}" ]] || return 1
+    local state
+    state="$(_sbx_state_dir "$agent")"
+    _sbx_args+=(--write "$state")
+    case "$agent" in
+      claude)
+        _sbx_jail_env=(env "CLAUDE_CONFIG_DIR=$state") ;;
+      gh)
+        _sbx_jail_env=(env "GH_CONFIG_DIR=$state") ;;
+      opencode)
+        mkdir -p "$state/config" "$state/data" "$state/cache" "$state/state"
+        _sbx_jail_env=(env "XDG_CONFIG_HOME=$state/config" "XDG_DATA_HOME=$state/data" \
+                           "XDG_CACHE_HOME=$state/cache" "XDG_STATE_HOME=$state/state") ;;
+      nullclaw)
+        _sbx_jail_env=(env "NULLCLAW_HOME=$state") ;;
+      zeroclaw)
+        _sbx_jail_env=(env "ZEROCLAW_CONFIG_DIR=$state") ;;
+      nanocoder)
+        _sbx_jail_env=(env "NANOCODER_CONFIG_DIR=$state") ;;
+      *)
+        _sbx_jail_env=(env "HOME=$state") ;;
+    esac
+    return 0
+  }
+
   # ----- sbx-here (legacy iteration-surface preset) -----
   # Strict project-dir-only jail: writes restricted to $PWD (no
   # $TMPDIR), network blocked. Ignores SBX_* env vars by design.
@@ -188,87 +263,124 @@ common = '''
   }
 
   # ----- Per-agent jails -----
-  # Each wrapper populates _sbx_args via the helper, then expands it
-  # QUOTED into sbx-agent's argv. Quoting is what prevents glob and
-  # word-splitting bugs.
+  # Each wrapper populates _sbx_args via _sbx_agent_args, then
+  # conditionally redirects state via _sbx_jail_write. When
+  # SBX_JAIL_HOME is unset, behavior is identical to the pre-
+  # jail-home code — the else branch has the original --write paths.
 
   # Anthropic Claude Code
   claude-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.claude" -- claude "$@"
+    if _sbx_jail_write claude; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" claude "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.claude" -- claude "$@"
+    fi
   }
 
-  # OpenAI Codex CLI — TODO: verify state dir
+  # OpenAI Codex CLI (HOME override — no native config-dir env var)
   codex-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.codex" --write "$HOME/.config/codex" -- codex "$@"
+    if _sbx_jail_write codex; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" codex "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.codex" --write "$HOME/.config/codex" -- codex "$@"
+    fi
   }
 
-  # Google Gemini CLI — TODO: verify state dir
+  # Google Gemini CLI (HOME override — no native config-dir env var)
   gemini-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.gemini" --write "$HOME/.config/gemini" -- gemini "$@"
+    if _sbx_jail_write gemini; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" gemini "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.gemini" --write "$HOME/.config/gemini" -- gemini "$@"
+    fi
   }
 
   # GitHub Copilot CLI (gh extension) — usage: copilot-jail suggest "..."
   copilot-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.config/gh" -- gh copilot "$@"
+    if _sbx_jail_write gh; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" gh copilot "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.config/gh" -- gh copilot "$@"
+    fi
   }
 
-  # Charm.sh Crush — TODO: verify state dir
+  # Charm.sh Crush (HOME override — no native config-dir env var)
   crush-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.config/crush" --write "$HOME/.local/share/crush" --write "$HOME/.cache/crush" -- crush "$@"
+    if _sbx_jail_write crush; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" crush "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.config/crush" --write "$HOME/.local/share/crush" --write "$HOME/.cache/crush" -- crush "$@"
+    fi
   }
 
-  # OpenCode — state dirs verified empirically 2026-04-15 via fake-HOME
-  # trace: opencode bootstraps ~/.config/opencode for config,
-  # ~/.local/state/opencode for runtime state, ~/.local/share/opencode
-  # for installed binaries/logs, ~/.cache/opencode for version info.
-  # The old "~/.opencode" guess was never touched by the real binary.
+  # OpenCode (XDG-compliant — redirected via XDG_* env vars)
   opencode-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" \
-      --write "$HOME/.config/opencode" \
-      --write "$HOME/.local/state/opencode" \
-      --write "$HOME/.local/share/opencode" \
-      --write "$HOME/.cache/opencode" \
-      -- opencode "$@"
+    if _sbx_jail_write opencode; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" opencode "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" \
+        --write "$HOME/.config/opencode" \
+        --write "$HOME/.local/state/opencode" \
+        --write "$HOME/.local/share/opencode" \
+        --write "$HOME/.cache/opencode" \
+        -- opencode "$@"
+    fi
   }
 
-  # OpenClaw — TODO: verify state dir
+  # OpenClaw (HOME override — untested, package not in catalog)
   openclaw-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.openclaw" --write "$HOME/.config/openclaw" -- openclaw "$@"
+    if _sbx_jail_write openclaw; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" openclaw "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.openclaw" --write "$HOME/.config/openclaw" -- openclaw "$@"
+    fi
   }
 
-  # NullClaw — TODO: verify state dir
+  # NullClaw (native override via NULLCLAW_HOME)
   nullclaw-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.nullclaw" --write "$HOME/.config/nullclaw" -- nullclaw "$@"
+    if _sbx_jail_write nullclaw; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" nullclaw "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.nullclaw" --write "$HOME/.config/nullclaw" -- nullclaw "$@"
+    fi
   }
 
-  # ZeroClaw — TODO: verify state dir
+  # ZeroClaw (native override via ZEROCLAW_CONFIG_DIR)
   zeroclaw-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.zeroclaw" --write "$HOME/.config/zeroclaw" -- zeroclaw "$@"
+    if _sbx_jail_write zeroclaw; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" zeroclaw "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.zeroclaw" --write "$HOME/.config/zeroclaw" -- zeroclaw "$@"
+    fi
   }
 
-  # Nanobot — TODO: verify state dir
+  # Nanobot (HOME override — untested, not in catalog)
   nanobot-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/.nanobot" --write "$HOME/.config/nanobot" -- nanobot "$@"
+    if _sbx_jail_write nanobot; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" nanobot "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/.nanobot" --write "$HOME/.config/nanobot" -- nanobot "$@"
+    fi
   }
 
-  # Nanocoder — state dir verified empirically 2026-04-15 via fake-HOME
-  # trace: nanocoder uses the macOS-standard preferences path rather
-  # than a dotfile. Creates ~/Library/Preferences/nanocoder/ and
-  # .nano-coder-history inside it. Both old guesses (~/.nanocoder and
-  # ~/.config/nanocoder) were never touched.
+  # Nanocoder (native override via NANOCODER_CONFIG_DIR)
   nanocoder-jail() {
     _sbx_agent_args
-    sbx-agent "${_sbx_args[@]}" --write "$HOME/Library/Preferences/nanocoder" -- nanocoder "$@"
+    if _sbx_jail_write nanocoder; then
+      sbx-agent "${_sbx_args[@]}" -- "${_sbx_jail_env[@]}" nanocoder "$@"
+    else
+      sbx-agent "${_sbx_args[@]}" --write "$HOME/Library/Preferences/nanocoder" -- nanocoder "$@"
+    fi
   }
 '''
 
